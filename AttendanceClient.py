@@ -21,6 +21,16 @@ from threading import Thread
 def blackImg(x, y):
     return np.zeros((y, x, 3), np.uint8)
     
+def textOn(img, text, pos = (0, 50), scale = 1, color = (255,255,255), lineWidth = 1, type = 2, font=cv2.FONT_HERSHEY_SIMPLEX):
+    cv2.putText(img,str(text), 
+                pos, 
+                font, 
+                scale,
+                color,
+                lineType = type,
+                thickness = lineWidth)
+    return img #is pointer
+    
 def activeWindowName():
     return GetWindowText(GetForegroundWindow())
 
@@ -52,53 +62,45 @@ def isInt(s):
 
 #decides what mage is to be shown in console
 ConsoleImg = blackImg(1000, 600)
+cv2.imshow(CONSOLE_WINDOW_NAME, ConsoleImg)
 def CONSOLE_MANAGER():
     global ConsoleImg
+    start = time.time()
     while True:
-        time.sleep(0.1)
-        print("console")
-
-# decides if notify window should be shown, and if so, what
-notifyImg = blackImg(400, 300)
-notifyVisible = True
-def NOTIFIER_MANAGER():
-    global notifyImg
-    global notifyVisible
-    while True:
-        time.sleep(0.1)
-        print("notifier")
-
+        ConsoleImg = blackImg(1000, 600)# reset to black
+        elap = time.time()-start
+        ConsoleImg = textOn(ConsoleImg, elap)
+        time.sleep(0.01)
+        
 #shows images that above managers want to be shown & ends program on "X" button
 def GUI_RENDERER():
     global ConsoleImg
-    global notifyImg
-    global notifyVisible
-    
-    cv2.imshow(CONSOLE_WINDOW_NAME, blackImg(400, 300))
     
     while True:
         if cv2.getWindowProperty(CONSOLE_WINDOW_NAME, 0)<0: #if console is closed, end program
             END_ALL_PROC()
-        cv2.waitKey(100)
-        print("renderer")
+            return None
+            
+        cv2.imshow(CONSOLE_WINDOW_NAME, ConsoleImg)
+        cv2.waitKey(10)
 
 consoleMan = Thread(target = CONSOLE_MANAGER)
 consoleMan.start()
-notifyMan = Thread(target = NOTIFIER_MANAGER)
-notifyMan.start()
-guiMan = Thread(target = GUI_RENDERER)
-guiMan.start()
+scanHandler = Thread(target = GUI_RENDERER)
+scanHandler.start()
 
 #################
         
 ## ID SCANNER ##
 
+ScannedIdQueue = []
 def scannedID(id):
-    print(id)
-        
-
+    global ScannedIdQueue
+    ScannedIdQueue.insert(0, id)
+    print(ScannedIdQueue)
+    
 idBuffer = ""
-lastAdd = time.time()
+lastAdd = 0
 def keyPressed(event):
     global idBuffer
     global lastAdd
@@ -138,7 +140,6 @@ def keyPressed(event):
             idBuffer = ""
             lastAdd = 0
     
-    
     # return True to pass the event to other handlers
     return True
 
@@ -148,5 +149,3 @@ hm.KeyDown = keyPressed
 hm.HookKeyboard()
 # wait forever
 pythoncom.PumpMessages()
-
-################
