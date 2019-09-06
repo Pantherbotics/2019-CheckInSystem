@@ -13,10 +13,15 @@ import cv2
 import numpy as np
 from threading import Thread
 import math
+import win32api
+import keyboard
 
 #############
 
 ## TOOL FUNCTIONS ##
+
+def mouse1down():   
+    return win32api.GetKeyState(0x01) < 0
 
 def blackImg(x, y):
     return np.zeros((y, x, 3), np.uint8)
@@ -68,6 +73,7 @@ def asDDHHMMSS(sec):
         ss = "0"+ss
     st = dd+":"+hh+":"+mm+":"+ss
     return st
+    
         
 ####################
 
@@ -76,10 +82,17 @@ def asDDHHMMSS(sec):
 #decides what mage is to be shown in console
 ConsoleImg = blackImg(1000, 600)
 cv2.imshow(CONSOLE_WINDOW_NAME, ConsoleImg)
+ActivePage = 0
+page_count = 10
+page_change_rate = 0.2
+last_page_change = 0
 def CONSOLE_MANAGER():
     global ConsoleImg
     global ScannedIdQueue
     global idBuffer
+    global ActivePage
+    global last_page_change
+    global page_change_rate
     start = time.time()
     while True:
         elap = time.time()-start
@@ -87,13 +100,30 @@ def CONSOLE_MANAGER():
         
         ## draw bottom info bar ##
         cv2.rectangle(ConsoleImg, (0, 575), (1000, 600), (87, 166, 212), -1)
-        ConsoleImg = textOn(ConsoleImg, "time since open: " + asDDHHMMSS(elap), pos = (615, 597), scale = 0.75, lineWidth = 2)
-        ConsoleImg = textOn(ConsoleImg, "input: " + idBuffer, pos = (3, 597), scale = 0.75, lineWidth = 2)
+        ConsoleImg = textOn(ConsoleImg, "time since open: " + asDDHHMMSS(elap), pos = (615, 595), scale = 0.75, lineWidth = 2)
+        ConsoleImg = textOn(ConsoleImg, "input: " + idBuffer, pos = (3, 595), scale = 0.75, lineWidth = 2)
         
-        ## random crap ##
-        ConsoleImg = textOn(ConsoleImg, ScannedIdQueue, pos=(0, 250))
-        
-        ## end ##
+        if ActivePage == 2:
+            ConsoleImg = textOn(ConsoleImg, ScannedIdQueue, pos=(0, 250))
+            ConsoleImg = textOn(ConsoleImg, "active: " + str(isActiveWindow()), pos=(0, 300))
+            ConsoleImg = textOn(ConsoleImg, "mouse : " + str(mouse1down()), pos=(0, 350))
+            ConsoleImg = textOn(ConsoleImg, "page  : " + str(ActivePage), pos=(0, 400))
+        else: #default
+            ConsoleImg = textOn(ConsoleImg, ScannedIdQueue, pos=(0, 250))
+            ConsoleImg = textOn(ConsoleImg, "active: " + str(isActiveWindow()), pos=(0, 300))
+            ConsoleImg = textOn(ConsoleImg, "mouse : " + str(mouse1down()), pos=(0, 350))
+            ConsoleImg = textOn(ConsoleImg, "page  : " + str(ActivePage), pos=(0, 400))
+            
+        ## page change handle4 ##
+        if ((time.time()-last_page_change) > page_change_rate) and (isActiveWindow()):
+            if keyboard.is_pressed("right"):
+                ActivePage+=1
+                last_page_change = time.time()
+            elif keyboard.is_pressed("left"):
+                ActivePage-=1
+                last_page_change = time.time()
+        ActivePage=ActivePage%page_count
+        ## end ##            
         time.sleep(0.05)
         
 #shows images that above managers want to be shown & ends program on "X" button
