@@ -280,7 +280,7 @@ def EventHandler():
         
 def PresenceUpdater():
     global EventQueue
-    minutes_between_updates = 5/60
+    minutes_between_updates = 5 #update every 5 minutes
     while True:
         EventQueue.append("UPDATE:presence")
         time.sleep((minutes_between_updates)*60)
