@@ -1,5 +1,7 @@
-ALLOWED_TIME_BETWEEN_KEY_PRESSES = 0.5 #lower = faster key presses required
+ALLOWED_TIME_BETWEEN_KEY_PRESSES = 0.05 #lower = faster key presses required
 CONSOLE_WINDOW_NAME = "Attendance | Gabe > everyone else" # name of the cv2 window in which attendance will be shown
+SECONDS_BETWEEN_UPDATES = 5*60
+ARTIFICIAL_INTERNET_SLOW = 0 #second delay before accessing the internet, for testing
 
 ## IMPORTS ##
 
@@ -131,13 +133,14 @@ def asSeconds(HHMMSS):
     return (int(hh)*60*60 + int(mm)*60 + int(ss))
     
 def getjson(url):
+    global ARTIFICIAL_INTERNET_SLOW
     try:
-        with urllib.request.urlopen(url) as response:
+        time.sleep(ARTIFICIAL_INTERNET_SLOW)
+        with urllib.request.urlopen(url, timeout=2.0) as response:
             val = json.loads(response.read().decode())
             return (True, val)
     except Exception as e: 
-        print(e)
-        return (False, "ERROR: 404")
+        return (False, {"error" : str(e)})
     
 def api_reach(directory):
     success, JSON = getjson("http://3863.us/" + directory)
@@ -196,7 +199,7 @@ def EventHandler():
                 curEvent = "accessing api for presence update"
                 start = time.time()
                 succ, val = api_reach("GetCurrentPresence.php?psswd=nphs3863")
-                while time.time()-start < 0.1: #waitAsync
+                while time.time()-start < 0.5: #waitAsync
                     time.sleep(0.01)
                 if succ:
                     if val["error"] == 0:
@@ -211,15 +214,15 @@ def EventHandler():
                             elapSeconds = asSeconds(elapsed)
                             tempPresence["info"].append({"id" : id,"name" : name, "elapsedTime" : elapSeconds})
                         CurrentPresence = tempPresence
-                        while time.time()-start < 0.1:  #waitAsync
+                        while time.time()-start < 0.5:  #waitAsync
                             time.sleep(0.01)
                         EventQueue.remove(cmd)
                     else:
                         curEvent = "ERR: " + str(val["error"])
                         time.sleep(0.1)
                 else:
-                    curEvent = "ERR: API-NO-RESPONSE"
-                    time.sleep(0.1)
+                    curEvent = "API-ERR: " + val["error"]
+                    time.sleep(2)
             else:
                 curEvent = "unknown command: " + cmd
                 time.sleep(0.1)
@@ -233,6 +236,7 @@ def EventHandler():
                     curEvent = "logging in..."
                     CurrentPresence["info"].append({"id" : val["id"] ,"name" : val["Name"], "elapsedTime" : int(time.time()-start)})
                     LastLogin = time.time()
+                    EventQueue.remove(cmd)
                     LastLoginOutPerson = val["id"] if val["Name"] == "Unknown" else val["Name"]
                     time.sleep(0.1)
                 else:
@@ -241,15 +245,15 @@ def EventHandler():
                         if member["id"] == val["id"]:
                             CurrentPresence["info"].remove(member)
                             LastLogout = time.time()
+                            EventQueue.remove(cmd)
                             LastLoginOutPerson = val["id"] if val["Name"] == "Unknown" else val["Name"]
                     time.sleep(0.1)
             else:
-                curEvent = "ERR: API-NO-RESPONSE"
+                curEvent = "API-ERR: " + val["error"]
                 LastErrorScan = time.time()
-                time.sleep(0.1)
-            while time.time()-start < 0.1: #waitAsync
+                time.sleep(2)
+            while time.time()-start < 0.5: #waitAsync
                 time.sleep(0.01)
-            EventQueue.remove(cmd)
         elif cmdTyp == "terminateAll":
             curEvent = "Terminating All Sessions"
             start = time.time()
@@ -259,31 +263,40 @@ def EventHandler():
                     curEvent = "Accounts affected: " + str(val["affectedPeopleCount"])
                     CurrentPresence = {"updated" : time.time(), "info" : []}
                     time.sleep(3)
-                    while time.time()-start < 0.1:  #waitAsync
+                    while time.time()-start < 0.5:  #waitAsync
                         time.sleep(0.01)
                     EventQueue.remove(cmd)
                 else:
                     curEvent = "ERR: " + str(val["error"])
                     time.sleep(0.1)
             else:
-                curEvent = "ERR: API-NO-RESPONSE"
-                time.sleep(0.1)
-        elif cmdTyp == "Clear" and cmdVal == "myself":
+                curEvent = "API-ERR: " + val["error"]
+                time.sleep(2)
+        elif cmdTyp == "Clear" and cmdVal == "EventQueue":
             curEvent = "Clearing queue"
             EventQueue = []
             time.sleep(0.1)
         else:
             curEvent = "unknown command: " + cmd
-            time.sleep(3)
-            EventQueue.remove(cmd)
+            time.sleep(1)
         curEvent = ""
         
 def PresenceUpdater():
     global EventQueue
-    minutes_between_updates = 5/60
+    global SECONDS_BETWEEN_UPDATES
     while True:
         EventQueue.append("UPDATE:presence")
-        time.sleep((minutes_between_updates)*60)
+        
+        found = True
+        while found:
+            found = False
+            for cmd in EventQueue:
+                if cmd == "UPDATE:presence":
+                    found = True
+                    break
+            time.sleep(0.1)
+            
+        time.sleep(SECONDS_BETWEEN_UPDATES)
 
 confirmationPrompt = False
 confirmationQuestion = ""
@@ -306,6 +319,24 @@ def areYouSure(question):
     confirmationResult = False
     #sendresult
     return toreturn
+    
+enterIDmanually = False
+enterId_timeout = 0
+def manualIdEnter():
+    global ALLOWED_TIME_BETWEEN_KEY_PRESSES
+    global enterIDmanually
+    global enterId_timeout
+    enterId_timeout = 10
+    enterIDmanually = True
+    tkp = ALLOWED_TIME_BETWEEN_KEY_PRESSES
+    ALLOWED_TIME_BETWEEN_KEY_PRESSES = 11
+    start = time.time()
+    while enterIDmanually and (time.time()-start)<10:
+        enterId_timeout = 10 - (time.time()-start)
+        time.sleep(0.01)
+    ALLOWED_TIME_BETWEEN_KEY_PRESSES = tkp
+    enterIDmanually = False
+    return enterIDmanually
     
 #decides what mage is to be shown in console
 ConsoleImg = blackImg(1000, 600)
@@ -340,6 +371,9 @@ def CONSOLE_MANAGER():
     global confirmationResult
     global confirmationQuestion
     global confirmationTimeBegan
+    global enterIDmanually
+    global enterId_timeout
+    global ALLOWED_TIME_BETWEEN_KEY_PRESSES
     hproc_start_time = time.time()
     while True:
         hproc_elapsed_time = time.time()-hproc_start_time
@@ -401,8 +435,12 @@ def CONSOLE_MANAGER():
             ConsoleImg = textOn(ConsoleImg, "C", pos=(buttonrow1_begin + 21, 325 + 54), scale = 1.5, lineWidth = 2)
             ConsoleImg = textOn(ConsoleImg, "Clear event queue", pos=(buttonrow1_begin + 80, 325+44), scale = 0.7, lineWidth = 1)
             #button
+            innercolor = (150, 100, 75) if keyboard.is_pressed("m") and isActiveWindow() else (250, 200, 150)
             ConsoleImg = DrawRoundedOutlinedRectangle(ConsoleImg, (buttonrow1_begin, 450), (buttonrow1_end, 525), (200, 150, 100), (255,255,255), radius = 10, border = 4)
-            
+            ConsoleImg = DrawRoundedOutlinedRectangle(ConsoleImg, (buttonrow1_begin+7, 450+7), (buttonrow1_begin+68, 450+68), innercolor, (255,255,255), radius = 10, border = 4)
+            ConsoleImg = textOn(ConsoleImg, "M", pos=(buttonrow1_begin + 19, 450 + 54), scale = 1.5, lineWidth = 2)
+            ConsoleImg = textOn(ConsoleImg, "Manual id enter", pos=(buttonrow1_begin + 80, 450+45), scale = 0.7, lineWidth = 1)
+            '''
             #button
             ConsoleImg = DrawRoundedOutlinedRectangle(ConsoleImg, (buttonrow2_begin, 75), (buttonrow2_end, 150), (200, 150, 100), (255,255,255), radius = 10, border = 4)
             #button
@@ -411,6 +449,7 @@ def CONSOLE_MANAGER():
             ConsoleImg = DrawRoundedOutlinedRectangle(ConsoleImg, (buttonrow2_begin, 325), (buttonrow2_end, 400), (200, 150, 100), (255,255,255), radius = 10, border = 4)
             #button
             ConsoleImg = DrawRoundedOutlinedRectangle(ConsoleImg, (buttonrow2_begin, 450), (buttonrow2_end, 525), (200, 150, 100), (255,255,255), radius = 10, border = 4)
+            '''
         elif ActivePage == 2:
             ConsoleImg = textOn(ConsoleImg, "page 3: maybe club stats?")
         elif ActivePage == 3:
@@ -432,6 +471,7 @@ def CONSOLE_MANAGER():
         
         ## draw certanity prompy ##
         if confirmationPrompt:
+            enterIDmanually = False
             elap = time.time()-confirmationTimeBegan
             if elap > 10:
                 confirmationResult = False
@@ -461,7 +501,22 @@ def CONSOLE_MANAGER():
             
             ConsoleImg = cv2.rectangle(ConsoleImg, (125, 365), (int((900-125)*(1-(elap/10)) + 125), 370), (255,255,255), -1)
             
+        myIdbuffer = idBuffer
+        while len(myIdbuffer) < 6:
+            myIdbuffer+="_"
+        myIdbuffer+="-"
+        if (time.time()-lastAdd) > ALLOWED_TIME_BETWEEN_KEY_PRESSES:
+            myIdbuffer = "______-"
+        if enterIDmanually:
+            ConsoleImg = DrawRoundedOutlinedRectangle(ConsoleImg, (100, 75), (900, 525), (150, 150, 150), (255,255,255), radius = 10, border = 4)
+            textsize = cv2.getTextSize("Enter ID then press enter:", cv2.FONT_HERSHEY_SIMPLEX, 1.25, 2)[0]
+            ConsoleImg = textOn(ConsoleImg, "Enter ID then press enter:", pos=(int(500-(textsize[0]/2)), 150), scale = 1.25, lineWidth = 2)
             
+            textsize = cv2.getTextSize(myIdbuffer, cv2.FONT_HERSHEY_SIMPLEX, 4, 2)[0]
+            ConsoleImg = textOn(ConsoleImg, myIdbuffer, pos=(int(500-(textsize[0]/2)), 350), scale = 4, lineWidth = 3)
+            
+            
+            ConsoleImg = cv2.rectangle(ConsoleImg, (125, 495), (int((900-125)*(enterId_timeout/10) + 125), 500), (255,255,255), -1)
             
         ##isActiveWindow##
         if lastConIsActive!=isActiveWindow():
@@ -470,6 +525,7 @@ def CONSOLE_MANAGER():
         if not lastConIsActive:
             confirmationResult = False
             confirmationPrompt = False
+            enterIDmanually = False
             a = (time.time() - conActiveSwitchedAt)*2
             if a>0.5:
                 a=0.5
@@ -479,7 +535,15 @@ def CONSOLE_MANAGER():
             if a<0.5:
                 ConsoleImg = brighten(ConsoleImg, 0.5-a)
             
-            
+        ## draw event queue ##
+        print("-")
+        i=0
+        for cmd in EventQueue:
+            cmdTyp, cmdVal = cmd.split(":")
+            h = 450 + i*50
+            ConsoleImg = cv2.rectangle(ConsoleImg, (250,h), (750,h+50), (255,255,255), -1)
+            ConsoleImg = textOn(ConsoleImg, cmdTyp + ": " + cmdVal, pos=(255, h+37), scale = 1.25, lineWidth = 2, color = (0,0,0))
+            i+=1
             
         ## draw notifier ##
         notifier_show_time = 3 #seconds that the notifier pop-up is shown
@@ -508,12 +572,6 @@ def CONSOLE_MANAGER():
             
             
         ## draw bottom info bar ##
-        myIdbuffer = idBuffer
-        while len(myIdbuffer) < 6:
-            myIdbuffer+="_"
-        myIdbuffer+="-"
-        if (time.time()-lastAdd) > ALLOWED_TIME_BETWEEN_KEY_PRESSES:
-            myIdbuffer = "______-"
         cv2.rectangle(ConsoleImg, (0, 575), (1000, 600), (87, 166, 212), -1)
         ConsoleImg = textOn(ConsoleImg, "time since open: " + asDDHHMMSS(hproc_elapsed_time), pos = (615, 595), scale = 0.75, lineWidth = 2)
         ConsoleImg = textOn(ConsoleImg, "input: " + myIdbuffer, pos = (3, 595), scale = 0.75, lineWidth = 2)
@@ -534,6 +592,7 @@ def CONSOLE_MANAGER():
                 last_page_change = time.time()
                 confirmationResult = False
                 confirmationPrompt = False
+                enterIDmanually = False
         elif keyboard.is_pressed("left"):
             ConsoleImg = rightArrow(ConsoleImg)
             ConsoleImg = leftArrow(ConsoleImg, clr=(255, 100, 100))
@@ -542,6 +601,7 @@ def CONSOLE_MANAGER():
                 last_page_change = time.time()
                 confirmationResult = False
                 confirmationPrompt = False
+                enterIDmanually = False
         else:
             ConsoleImg = rightArrow(ConsoleImg)
             ConsoleImg = leftArrow(ConsoleImg)
@@ -554,19 +614,24 @@ def CONSOLE_MANAGER():
 def ButtonPressHandler():
     global ActivePage
     global EventQueue
+    global confirmationPrompt
+    global enterIDmanually
     while True:
-        if ActivePage == 1 and isActiveWindow():
+        if ActivePage == 1 and isActiveWindow() and not confirmationPrompt and not enterIDmanually:
             if keyboard.is_pressed("t"):
                 if areYouSure("Terminate ALL Sessions"):
                     EventQueue.insert(0, "terminateAll:1")
+                    time.sleep(1)
             if keyboard.is_pressed("u"):
                 EventQueue.append("UPDATE:presence")
                 while keyboard.is_pressed("u"):
                     time.sleep(0.1)
             if keyboard.is_pressed("c"):
-                EventQueue.insert(0, "Clear:myself")
+                EventQueue.insert(0, "Clear:EventQueue")
                 while keyboard.is_pressed("c"):
                     time.sleep(0.1)
+            if keyboard.is_pressed("m"):
+                manualIdEnter()
         time.sleep(0.01)
         
 #shows images that above managers want to be shown & ends program on "X" button
@@ -600,14 +665,17 @@ buttonMan.start()
 ## ID SCANNER ##
 def scannedID(id):
     global EventQueue
+    global enterIDmanually
     event = "scanned:" + str(id)
     EventQueue.insert(0, event) ## put this at the beginning of the queue, cut the line
+    enterIDmanually = False ##completed manual id entering, if applicable
     
 idBuffer = ""
 lastAdd = 0
 def keyPressed(event):
     global idBuffer
     global lastAdd
+    global ALLOWED_TIME_BETWEEN_KEY_PRESSES
     key = event.Key
     if (isInt(key)):
         if (time.time()-lastAdd)<ALLOWED_TIME_BETWEEN_KEY_PRESSES: #if current key press is soon enough after the last
